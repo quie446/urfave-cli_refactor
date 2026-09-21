@@ -380,6 +380,12 @@ func (cmd *Command) set(fName string, f Flag, val string) error {
 	if err := f.Set(fName, val); err != nil {
 		return fmt.Errorf("invalid value %q for flag -%s: %v", val, fName, err)
 	}
+	// cmd.set is only reached while parsing command line arguments. Record
+	// that the value came from the CLI layer so origin tracing can tell CLI
+	// values apart from env/file values which are added to setFlags later.
+	if cm, ok := f.(cliSetMarker); ok {
+		cm.markCLISet()
+	}
 	return nil
 }
 

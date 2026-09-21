@@ -76,12 +76,14 @@ type FlagBase[T any, C any, VC ValueCreator[T, C]] struct {
 	ValidateDefaults bool                                     `json:"validateDefaults"` // whether to validate defaults or not
 
 	// unexported fields for internal use
-	count      int            // number of times the flag has been set
-	hasBeenSet bool           // whether the flag has been set from env or file
-	applied    bool           // whether the flag has been applied to a flag set already
-	creator    VC             // value creator for this flag type
-	value      Value          // value representing this flag's value
-	stringer   FlagStringFunc // optional per-flag override of FlagStringer
+	count          int            // number of times the flag has been set
+	hasBeenSet     bool           // whether the flag has been set from env or file
+	applied        bool           // whether the flag has been applied to a flag set already
+	creator        VC             // value creator for this flag type
+	value          Value          // value representing this flag's value
+	stringer       FlagStringFunc // optional per-flag override of FlagStringer
+	resolvedSource ValueSource    // source that supplied the value during PostParse
+	cliSet         bool           // whether the value was assigned on the command line
 }
 
 // GetValue returns the flags value as string representation and an empty
@@ -132,6 +134,10 @@ func (f *FlagBase[T, C, V]) PostParse() error {
 	tracef("postparse (flag=%[1]q)", f.Name)
 
 	if !f.hasBeenSet {
+		if err := f.Sources.ValidateOrder(f.Name); err != nil {
+			return err
+		}
+
 		if val, source, found := f.Sources.LookupWithSource(); found {
 			// reflect.TypeOf yields nil when T is an interface type (e.g.
 			// GenericFlag) and the value is nil, so the kind has to be
@@ -153,6 +159,7 @@ func (f *FlagBase[T, C, V]) PostParse() error {
 			}
 
 			f.hasBeenSet = true
+			f.resolvedSource = source
 		}
 	}
 

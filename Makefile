@@ -24,3 +24,7 @@ docs:
 .PHONY: serve-docs
 serve-docs:
 	mkdocs serve
+
+.PHONY: merge-origin-gate
+merge-origin-gate:
+	./scripts/check-merge-origin-gate.sh

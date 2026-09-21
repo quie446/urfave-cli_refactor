@@ -32,13 +32,15 @@ type BoolWithInverseFlag struct {
 	InversePrefix    string                                      `json:"invPrefix"`        // The prefix used to indicate a negative value. Default: `env` becomes `no-env`
 
 	// unexported fields for internal use
-	count      int   // number of times the flag has been set
-	hasBeenSet bool  // whether the flag has been set from env or file
-	applied    bool  // whether the flag has been applied to a flag set already
-	value      Value // value representing this flag's value
-	pset       bool
-	nset       bool
-	stringer   FlagStringFunc // optional per-flag override of FlagStringer
+	count          int   // number of times the flag has been set
+	hasBeenSet     bool  // whether the flag has been set from env or file
+	applied        bool  // whether the flag has been applied to a flag set already
+	value          Value // value representing this flag's value
+	pset           bool
+	nset           bool
+	stringer       FlagStringFunc // optional per-flag override of FlagStringer
+	resolvedSource ValueSource    // source that supplied the value during PostParse
+	cliSet         bool           // whether the value was assigned on the command line
 }
 
 // SetStringer overrides the [FlagStringFunc] used by this flag's String
@@ -108,6 +110,9 @@ func (bif *BoolWithInverseFlag) PostParse() error {
 	tracef("postparse (flag=%[1]q)", bif.Name)
 
 	if !bif.hasBeenSet {
+		if err := bif.Sources.ValidateOrder(bif.Name); err != nil {
+			return err
+		}
 		if val, source, found := bif.Sources.LookupWithSource(); found {
 			if val == "" {
 				val = "false"
@@ -120,6 +125,7 @@ func (bif *BoolWithInverseFlag) PostParse() error {
 			}
 
 			bif.hasBeenSet = true
+			bif.resolvedSource = source
 		}
 	}
 
