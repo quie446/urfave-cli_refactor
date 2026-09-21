@@ -82,6 +82,7 @@ type FlagBase[T any, C any, VC ValueCreator[T, C]] struct {
 	creator    VC             // value creator for this flag type
 	value      Value          // value representing this flag's value
 	stringer   FlagStringFunc // optional per-flag override of FlagStringer
+	source     FlagValueSource
 }
 
 // GetValue returns the flags value as string representation and an empty
@@ -132,7 +133,7 @@ func (f *FlagBase[T, C, V]) PostParse() error {
 	tracef("postparse (flag=%[1]q)", f.Name)
 
 	if !f.hasBeenSet {
-		if val, source, found := f.Sources.LookupWithSource(); found {
+		if val, source, found := f.Sources.lookupFlagValueWithSource(); found {
 			// reflect.TypeOf yields nil when T is an interface type (e.g.
 			// GenericFlag) and the value is nil, so the kind has to be
 			// derived defensively.
@@ -141,22 +142,47 @@ func (f *FlagBase[T, C, V]) PostParse() error {
 				kind = ty.Kind()
 			}
 
-			if val != "" || kind == reflect.String {
-				if err := f.Set(f.Name, val); err != nil {
-					return fmt.Errorf(
-						"could not parse %[1]q as %[2]T value from %[3]s for flag %[4]s: %[5]s",
-						val, f.Value, source, f.Name, err,
-					)
-				}
-			} else if val == "" && kind == reflect.Bool {
-				_ = f.Set(f.Name, "false")
+			applied, err := f.applyValueSource(val, kind)
+			if err != nil {
+				return fmt.Errorf(
+					"could not parse %[1]q as %[2]T value from %[3]s for flag %[4]s: %[6]s (layer: %[5]s)",
+					val, f.Value, source, f.Name, valueSourceLayer(source), err,
+				)
+			}
+			if !applied {
+				return nil
 			}
 
+			f.source = FlagValueSource{
+				Layer:    valueSourceLayer(source),
+				Source:   source,
+				Value:    f.Get(),
+				Set:      true,
+				FlagName: f.Name,
+			}
 			f.hasBeenSet = true
 		}
 	}
 
 	return nil
+}
+
+func (f *FlagBase[T, C, V]) applyValueSource(val string, kind reflect.Kind) (bool, error) {
+	if val != "" || kind == reflect.String {
+		if err := f.Set(f.Name, val); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+
+	if val == "" && kind == reflect.Bool {
+		if err := f.Set(f.Name, "false"); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // pass configuration of parsing to value
@@ -183,6 +209,11 @@ func (f *FlagBase[T, C, V]) PreParse() error {
 		}
 	}
 	f.applied = true
+	f.source = FlagValueSource{
+		Layer:    CodeDefaultValueSourceLayer,
+		Value:    f.value.Get(),
+		FlagName: f.Name,
+	}
 	return nil
 }
 
@@ -251,6 +282,14 @@ func (f *FlagBase[T, C, V]) SetStringer(s FlagStringFunc) {
 // IsSet returns whether or not the flag has been set through env or file
 func (f *FlagBase[T, C, V]) IsSet() bool {
 	return f.hasBeenSet
+}
+
+func (f *FlagBase[T, C, V]) setFlagValueSource(source FlagValueSource) {
+	f.source = source
+}
+
+func (f *FlagBase[T, C, V]) getFlagValueSource() (FlagValueSource, bool) {
+	return f.source, f.applied
 }
 
 // Names returns the names of the flag

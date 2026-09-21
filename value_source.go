@@ -44,6 +44,30 @@ type ValueSourceChain struct {
 	Chain []ValueSource
 }
 
+// FlagValueSourceLayer identifies a layer in the flag value merge chain.
+type FlagValueSourceLayer string
+
+const (
+	CommandLineFlagValueSourceLayer FlagValueSourceLayer = "command-line flag"
+	EnvironmentValueSourceLayer     FlagValueSourceLayer = "environment variable"
+	FileValueSourceLayer            FlagValueSourceLayer = "file"
+	CodeDefaultValueSourceLayer     FlagValueSourceLayer = "code default"
+)
+
+// FlagValueSource identifies where a merged flag value came from.
+type FlagValueSource struct {
+	Layer    FlagValueSourceLayer
+	Source   ValueSource
+	Value    any
+	Set      bool
+	FlagName string
+}
+
+type flagValueSourceTracker interface {
+	setFlagValueSource(FlagValueSource)
+	getFlagValueSource() (FlagValueSource, bool)
+}
+
 func NewValueSourceChain(src ...ValueSource) ValueSourceChain {
 	return ValueSourceChain{
 		Chain: src,
@@ -99,6 +123,33 @@ func (vsc *ValueSourceChain) LookupWithSource() (string, ValueSource, bool) {
 	}
 
 	return "", nil, false
+}
+
+func (vsc *ValueSourceChain) lookupFlagValueWithSource() (string, ValueSource, bool) {
+	chain := NewValueSourceChain(vsc.orderedSources()...)
+	return chain.LookupWithSource()
+}
+
+func (vsc *ValueSourceChain) orderedSources() []ValueSource {
+	envSources := make([]ValueSource, 0, len(vsc.Chain))
+	otherSources := make([]ValueSource, 0, len(vsc.Chain))
+
+	for _, src := range vsc.Chain {
+		if envSource, ok := src.(EnvValueSource); ok && envSource.IsFromEnv() {
+			envSources = append(envSources, src)
+			continue
+		}
+		otherSources = append(otherSources, src)
+	}
+
+	return append(envSources, otherSources...)
+}
+
+func valueSourceLayer(src ValueSource) FlagValueSourceLayer {
+	if envSource, ok := src.(EnvValueSource); ok && envSource.IsFromEnv() {
+		return EnvironmentValueSourceLayer
+	}
+	return FileValueSourceLayer
 }
 
 // envVarValueSource encapsulates a ValueSource from an environment variable

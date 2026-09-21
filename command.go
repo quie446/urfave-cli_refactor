@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"reflect"
 	"slices"
 	"strings"
 )
@@ -380,6 +381,14 @@ func (cmd *Command) set(fName string, f Flag, val string) error {
 	if err := f.Set(fName, val); err != nil {
 		return fmt.Errorf("invalid value %q for flag -%s: %v", val, fName, err)
 	}
+	if tracked, ok := f.(flagValueSourceTracker); ok {
+		tracked.setFlagValueSource(FlagValueSource{
+			Layer:    CommandLineFlagValueSourceLayer,
+			Value:    f.Get(),
+			Set:      true,
+			FlagName: fName,
+		})
+	}
 	return nil
 }
 
@@ -576,6 +585,31 @@ func (cmd *Command) IsSet(name string) bool {
 	}
 
 	return isSet
+}
+
+// FlagValueSource reports the layer that supplied the final value for name.
+func (cmd *Command) FlagValueSource(name string) (FlagValueSource, error) {
+	fl := cmd.lookupFlag(name)
+	if fl == nil {
+		return FlagValueSource{}, fmt.Errorf("flag %q: source unavailable: flag is not defined on this command", name)
+	}
+
+	tracked, ok := fl.(flagValueSourceTracker)
+	if !ok {
+		tracef("flag with name %[1]q does not support source tracking (cmd=%[2]q)", name, cmd.Name)
+		return FlagValueSource{}, fmt.Errorf("flag %q: source unavailable: flag type %T does not participate in value merging", name, fl)
+	}
+
+	source, ready := tracked.getFlagValueSource()
+	if !ready {
+		return FlagValueSource{}, fmt.Errorf("flag %q: source unavailable: command has not completed the code-default layer", name)
+	}
+
+	if !reflect.DeepEqual(source.Value, fl.Get()) {
+		return FlagValueSource{}, fmt.Errorf("flag %q: source mismatch: reported layer %s does not match merged value", name, source.Layer)
+	}
+
+	return source, nil
 }
 
 // LocalFlagNames returns a slice of flag names used in this

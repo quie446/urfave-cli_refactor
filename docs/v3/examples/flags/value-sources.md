@@ -133,8 +133,36 @@ func main() {
 }
 ```
 
-Note that default values are set in the same order as they are defined in the
-`Sources` param. This allows the user to choose order of priority
+Flag values are merged through one chain. The effective precedence, from
+highest to lowest, is:
+
+1. Command line flags
+2. Environment variables
+3. File or other configured value sources
+4. The value set in code (`Value`)
+
+Multiple environment variables still resolve in declaration order, and
+multiple files still resolve in declaration order. Environment variables are
+always checked before files even if a file is listed first, so configurations
+written with the older file-first declaration continue to resolve with the
+locked precedence.
+
+After a command has run, `Command.FlagValueSource` reports the layer and value
+that supplied the final merged value:
+
+```go
+source, err := cmd.FlagValueSource("lang")
+if err != nil {
+    return err
+}
+fmt.Println(source.Layer, source.Set, source.Value)
+```
+
+`Set` distinguishes an explicitly provided empty string from an unset flag.
+An unset optional flag reports the code-default layer and `Set == false`.
+The query returns an error when the flag is unknown, has not completed
+merging, cannot be tracked, or its reported source no longer matches the
+merged value.
 
 #### Values from alternate input sources (YAML, TOML, and others)
 

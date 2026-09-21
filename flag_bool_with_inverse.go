@@ -39,6 +39,7 @@ type BoolWithInverseFlag struct {
 	pset       bool
 	nset       bool
 	stringer   FlagStringFunc // optional per-flag override of FlagStringer
+	source     FlagValueSource
 }
 
 // SetStringer overrides the [FlagStringFunc] used by this flag's String
@@ -57,6 +58,14 @@ func (bif *BoolWithInverseFlag) SetStringer(s FlagStringFunc) {
 
 func (bif *BoolWithInverseFlag) IsSet() bool {
 	return bif.hasBeenSet
+}
+
+func (bif *BoolWithInverseFlag) setFlagValueSource(source FlagValueSource) {
+	bif.source = source
+}
+
+func (bif *BoolWithInverseFlag) getFlagValueSource() (FlagValueSource, bool) {
+	return bif.source, bif.applied
 }
 
 func (bif *BoolWithInverseFlag) Get() any {
@@ -101,6 +110,11 @@ func (bif *BoolWithInverseFlag) PreParse() error {
 		}
 	}
 	bif.applied = true
+	bif.source = FlagValueSource{
+		Layer:    CodeDefaultValueSourceLayer,
+		Value:    bif.value.Get(),
+		FlagName: bif.Name,
+	}
 	return nil
 }
 
@@ -108,17 +122,24 @@ func (bif *BoolWithInverseFlag) PostParse() error {
 	tracef("postparse (flag=%[1]q)", bif.Name)
 
 	if !bif.hasBeenSet {
-		if val, source, found := bif.Sources.LookupWithSource(); found {
+		if val, source, found := bif.Sources.lookupFlagValueWithSource(); found {
 			if val == "" {
 				val = "false"
 			}
 			if err := bif.Set(bif.Name, val); err != nil {
 				return fmt.Errorf(
-					"could not parse %[1]q as %[2]T value from %[3]s for flag %[4]s: %[5]s",
-					val, bif.Value, source, bif.Name, err,
+					"could not parse %[1]q as %[2]T value from %[3]s for flag %[4]s: %[6]s (layer: %[5]s)",
+					val, bif.Value, source, bif.Name, valueSourceLayer(source), err,
 				)
 			}
 
+			bif.source = FlagValueSource{
+				Layer:    valueSourceLayer(source),
+				Source:   source,
+				Value:    bif.Get(),
+				Set:      true,
+				FlagName: bif.Name,
+			}
 			bif.hasBeenSet = true
 		}
 	}

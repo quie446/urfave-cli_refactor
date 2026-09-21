@@ -273,7 +273,16 @@ Binary size in v3 is managed through architectural simplification rather than bu
     },
     ```
 
-In the above case the Envs are checked first and if not found then files are looked at and then finally the `altsrc`
+The locked precedence is command line flags, environment variables, files or
+other `Sources`, then the code `Value`. Sources within the same layer remain
+checked in declaration order. In particular, an environment variable still
+wins when a file was accidentally declared before it; this keeps older v3
+combinations working while making merges deterministic.
+
+To identify the layer that produced a final flag value, call
+`Command.FlagValueSource` instead of inferring it from `IsSet` alone. Its
+`Set` field distinguishes an explicitly supplied empty value from an unset
+flag backed by a code default.
 
 ## cli.Context has been removed
 
@@ -287,6 +296,7 @@ All functions handled previously by `cli.Context` have been incorporated into `c
 | `cli.Context.LocalFlagNames` | `cli.Command.LocalFlagNames` |
 | `cli.Context.Lineage`        | `cli.Command.Lineage`        |
 | `cli.Context.Count`          | `cli.Command.Count`          |
+| `cli.Context` did not expose a source | `cli.Command.FlagValueSource` |
 | `cli.Context.Value`          | `cli.Command.Value`          |
 | `cli.Context.Args`           | `cli.Command.Args`           |
 | `cli.Context.NArg`           | `cli.Command.NArg`           |
